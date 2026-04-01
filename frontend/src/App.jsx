@@ -1,47 +1,57 @@
 import { useEffect, useState } from "react";
+import "./App.css";
+import PacienteForm from "./components/PacienteForm";
+import PacienteList from "./components/PacienteList";
+import CitaList from "./components/CitaList";
+import CalendarioCitas from "./CalendarioCitas";
+import ModalNuevaCita from "./components/ModalNuevaCita";
+import ModalDetalleCita from "./components/ModalDetalleCita";
+import PopupDiaCitas from "./components/PopupDiaCitas";
+import NotificacionesToast from "./components/NotificacionesToast";
+import BtnNotificaciones from "./components/BtnNotificaciones";
+import { useNotificacionesCitas } from "./hooks/useNotificacionesCitas";
+
+const API = "http://localhost:3000/api";
 
 function App() {
   const [pacientes, setPacientes] = useState([]);
   const [citas, setCitas] = useState([]);
   const [cargando, setCargando] = useState(true);
-  const [error, setError] = useState("");
+  const [tab, setTab] = useState("calendario");
+  const [mensaje, setMensaje] = useState(null);
 
-  const [formPaciente, setFormPaciente] = useState({
-    nombre: "",
-    telefono: "",
-    email: "",
-    notas: "",
-  });
+  // Modal nueva cita
+  const [modalCita, setModalCita] = useState(null); // { fecha, hora }
+  // Popup dia
+  const [popupDia, setPopupDia] = useState(null); // { fecha, posicion }
+  // Modal detalle de cita existente
+  const [modalDetalle, setModalDetalle] = useState(null); // cita object
+  const [pacienteEditando, setPacienteEditando] = useState(null);
 
-  const [formCita, setFormCita] = useState({
-    pacienteId: "",
-    fecha: "",
-    hora: "",
-    motivo: "",
-  });
+  // Notification toasts — watches citas and fires alerts 15 / 5 min before
+  const { toasts, cerrar: cerrarToast } = useNotificacionesCitas(citas);
+
+  const mostrarMensaje = (tipo, texto) => {
+    setMensaje({ tipo, texto });
+    setTimeout(() => setMensaje(null), 3500);
+  };
 
   const cargarPacientes = () => {
-    fetch("http://localhost:3000/api/pacientes")
+    fetch(`${API}/pacientes`)
       .then((res) => res.json())
-      .then((data) => {
-        setPacientes(data);
-      })
-      .catch((err) => {
-        console.error("Error al cargar pacientes:", err);
-        setError("No se pudieron cargar los pacientes");
-      });
+      .then(setPacientes)
+      .catch(() => mostrarMensaje("error", "No se pudieron cargar los pacientes"));
   };
 
   const cargarCitas = () => {
-    fetch("http://localhost:3000/api/citas")
+    fetch(`${API}/citas`)
       .then((res) => res.json())
       .then((data) => {
         setCitas(data);
         setCargando(false);
       })
-      .catch((err) => {
-        console.error("Error al cargar citas:", err);
-        setError("No se pudieron cargar las citas");
+      .catch(() => {
+        mostrarMensaje("error", "No se pudieron cargar las citas");
         setCargando(false);
       });
   };
@@ -51,220 +61,252 @@ function App() {
     cargarCitas();
   }, []);
 
-  const manejarCambioPaciente = (e) => {
-    const { name, value } = e.target;
-    setFormPaciente({
-      ...formPaciente,
-      [name]: value,
-    });
+  const guardarPaciente = async (datos) => {
+    if (pacienteEditando) {
+      try {
+        const res = await fetch(`${API}/pacientes/${pacienteEditando.id}`, {
+          method: "PUT",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(datos),
+        });
+        if (!res.ok) throw new Error();
+        setPacienteEditando(null);
+        mostrarMensaje("exito", "Paciente actualizado correctamente");
+        cargarPacientes();
+      } catch {
+        mostrarMensaje("error", "No se pudo actualizar el paciente");
+      }
+    } else {
+      try {
+        const res = await fetch(`${API}/pacientes`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(datos),
+        });
+        if (!res.ok) throw new Error();
+        mostrarMensaje("exito", "Paciente guardado correctamente");
+        cargarPacientes();
+      } catch {
+        mostrarMensaje("error", "No se pudo guardar el paciente");
+      }
+    }
   };
 
-  const guardarPaciente = async (e) => {
-    e.preventDefault();
-
+  const eliminarPacienteHandler = async (id) => {
     try {
-      const res = await fetch("http://localhost:3000/api/pacientes", {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify(formPaciente),
-      });
-
+      const res = await fetch(`${API}/pacientes/${id}`, { method: "DELETE" });
       if (!res.ok) {
-        throw new Error("No se pudo guardar el paciente");
+        const data = await res.json().catch(() => ({}));
+        mostrarMensaje("error", data.error || "No se pudo eliminar el paciente");
+        return;
       }
-
-      setFormPaciente({
-        nombre: "",
-        telefono: "",
-        email: "",
-        notas: "",
-      });
-
+      mostrarMensaje("exito", "Paciente eliminado");
       cargarPacientes();
-    } catch (err) {
-      console.error("Error al guardar paciente:", err);
-      alert("Hubo un error al guardar el paciente");
+    } catch {
+      mostrarMensaje("error", "No se pudo eliminar el paciente");
     }
   };
 
-  const manejarCambioCita = (e) => {
-    const { name, value } = e.target;
-    setFormCita({
-      ...formCita,
-      [name]: value,
-    });
-  };
-
-  const guardarCita = async (e) => {
-    e.preventDefault();
-
+  const cambiarEstadoPacienteHandler = async (id, estadoPaciente) => {
     try {
-      const res = await fetch("http://localhost:3000/api/citas", {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify({
-          ...formCita,
-          pacienteId: Number(formCita.pacienteId),
-        }),
+      const res = await fetch(`${API}/pacientes/${id}/estado`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ estadoPaciente }),
       });
-
-      if (!res.ok) {
-        throw new Error("No se pudo guardar la cita");
-      }
-
-      setFormCita({
-        pacienteId: "",
-        fecha: "",
-        hora: "",
-        motivo: "",
-      });
-
-      cargarCitas();
-    } catch (err) {
-      console.error("Error al guardar cita:", err);
-      alert("Hubo un error al guardar la cita");
+      if (!res.ok) throw new Error();
+      mostrarMensaje("exito", "Estado del paciente actualizado");
+      cargarPacientes();
+    } catch {
+      mostrarMensaje("error", "No se pudo cambiar el estado del paciente");
     }
+  };
+
+  // Returns current local time as HH:MM string (no timezone conversion needed —
+  // we just want what the clock shows in the room right now)
+  const horaActual = () => {
+    const now = new Date();
+    return `${String(now.getHours()).padStart(2, "0")}:${String(now.getMinutes()).padStart(2, "0")}`;
+  };
+
+  // Calendar date click — check if there are citas on that day
+  const handleDateClick = ({ fecha, hora, jsEvent }) => {
+    const citasDelDia = citas.filter((c) => c.fecha === fecha);
+
+    if (citasDelDia.length > 0) {
+      // On mobile never try to position the popup near the click —
+      // always center it so it stays fully on screen.
+      const isMobile = window.innerWidth < 768;
+      const posicion = isMobile
+        ? null
+        : (() => {
+            const rect = jsEvent.target.getBoundingClientRect();
+            return {
+              top: `${rect.bottom + window.scrollY + 4}px`,
+              left: `${Math.min(rect.left, window.innerWidth - 320)}px`,
+            };
+          })();
+      setPopupDia({ fecha, posicion });
+    } else {
+      // No citas — open modal directly to create
+      setModalCita({ fecha, hora: hora || horaActual() });
+    }
+  };
+
+  // Calendar event click:
+  // — Multiple citas that day → show popup so user picks which one
+  // — Single cita → open detail directly (faster)
+  const handleEventClick = ({ cita }) => {
+    const citasDelDia = citas.filter((c) => c.fecha === cita.fecha);
+    if (citasDelDia.length > 1) {
+      setPopupDia({ fecha: cita.fecha, posicion: null });
+    } else {
+      setModalDetalle(cita);
+    }
+  };
+
+  // Open detail modal from popup or list
+  const abrirDetalle = (cita) => {
+    setPopupDia(null);
+    setModalDetalle(cita);
+  };
+
+  // Called when PATCH /citas/:id resolves
+  const handleActualizarCita = (citaActualizada) => {
+    setModalDetalle(null);
+    mostrarMensaje("exito", "Cita actualizada");
+    cargarCitas();
+    cargarPacientes();
+  };
+
+  // Called from day popup to open create modal — always pre-fill current time
+  const abrirModalDesdePopup = (fecha) => {
+    setPopupDia(null);
+    setModalCita({ fecha, hora: horaActual() });
+  };
+
+  // Called when a cita is saved from modal
+  const handleCitaGuardada = () => {
+    setModalCita(null);
+    mostrarMensaje("exito", "Cita agendada correctamente");
+    cargarCitas();
+    cargarPacientes(); // refresh to get updated sesiones count
   };
 
   return (
-    <div style={{ padding: "20px", fontFamily: "Arial", maxWidth: "800px", margin: "0 auto" }}>
-      <h1>Gestión de Pacientes y Citas</h1>
+    <div className="app">
+      <header className="header">
+        <h1>CONSULTORIO DE ANGELA ADRIANA HERNÁNDEZ</h1>
+        <p className="subtitulo">Agenda de citas — Reynosa, Tamps.</p>
+        <BtnNotificaciones />
+      </header>
 
-      <h2>Agregar Paciente</h2>
-      <form
-        onSubmit={guardarPaciente}
-        style={{
-          marginBottom: "30px",
-          display: "flex",
-          flexDirection: "column",
-          gap: "10px",
-          maxWidth: "400px",
-        }}
-      >
-        <input
-          type="text"
-          name="nombre"
-          placeholder="Nombre"
-          value={formPaciente.nombre}
-          onChange={manejarCambioPaciente}
-          required
-        />
-
-        <input
-          type="text"
-          name="telefono"
-          placeholder="Teléfono"
-          value={formPaciente.telefono}
-          onChange={manejarCambioPaciente}
-        />
-
-        <input
-          type="email"
-          name="email"
-          placeholder="Correo"
-          value={formPaciente.email}
-          onChange={manejarCambioPaciente}
-        />
-
-        <textarea
-          name="notas"
-          placeholder="Notas"
-          value={formPaciente.notas}
-          onChange={manejarCambioPaciente}
-        />
-
-        <button type="submit">Guardar paciente</button>
-      </form>
-
-      <h2>Lista de pacientes</h2>
-      {pacientes.length === 0 ? (
-        <p>No hay pacientes</p>
-      ) : (
-        <ul>
-          {pacientes.map((p) => (
-            <li key={p.id}>
-              <strong>{p.nombre}</strong> - {p.telefono} - {p.email}
-            </li>
-          ))}
-        </ul>
+      {mensaje && (
+        <div className={`mensaje mensaje-${mensaje.tipo}`} role="alert">
+          {mensaje.texto}
+        </div>
       )}
 
-      <hr style={{ margin: "30px 0" }} />
-
-      <h2>Agregar Cita</h2>
-      <form
-        onSubmit={guardarCita}
-        style={{
-          marginBottom: "30px",
-          display: "flex",
-          flexDirection: "column",
-          gap: "10px",
-          maxWidth: "400px",
-        }}
-      >
-        <select
-          name="pacienteId"
-          value={formCita.pacienteId}
-          onChange={manejarCambioCita}
-          required
+      <nav className="tabs" aria-label="Secciones">
+        <button
+          className={`tab${tab === "calendario" ? " activo" : ""}`}
+          onClick={() => setTab("calendario")}
         >
-          <option value="">Selecciona un paciente</option>
-          {pacientes.map((p) => (
-            <option key={p.id} value={p.id}>
-              {p.nombre}
-            </option>
-          ))}
-        </select>
+          Calendario
+        </button>
+        <button
+          className={`tab${tab === "citas" ? " activo" : ""}`}
+          onClick={() => setTab("citas")}
+        >
+          Citas
+        </button>
+        <button
+          className={`tab${tab === "pacientes" ? " activo" : ""}`}
+          onClick={() => setTab("pacientes")}
+        >
+          Pacientes
+        </button>
+      </nav>
 
-        <input
-          type="date"
-          name="fecha"
-          value={formCita.fecha}
-          onChange={manejarCambioCita}
-          required
+      <main className="main">
+        {tab === "calendario" && (
+          <div className="seccion">
+            <CalendarioCitas
+              citas={citas}
+              onDateClick={handleDateClick}
+              onEventClick={handleEventClick}
+            />
+          </div>
+        )}
+
+        {tab === "citas" && (
+          <div className="seccion">
+            <CitaList
+              citas={citas}
+              cargando={cargando}
+              onVerCita={abrirDetalle}
+              onActualizar={handleActualizarCita}
+            />
+          </div>
+        )}
+
+        {tab === "pacientes" && (
+          <div className="seccion grid">
+            <PacienteForm
+              pacienteEditar={pacienteEditando}
+              onGuardar={guardarPaciente}
+              onCancelar={() => setPacienteEditando(null)}
+            />
+            <PacienteList
+              pacientes={pacientes}
+              onEditar={setPacienteEditando}
+              onEliminar={eliminarPacienteHandler}
+              onCambiarEstado={cambiarEstadoPacienteHandler}
+            />
+          </div>
+        )}
+      </main>
+
+      {/* Modal for creating new cita */}
+      {modalCita && (
+        <ModalNuevaCita
+          fecha={modalCita.fecha}
+          hora={modalCita.hora}
+          onGuardar={handleCitaGuardada}
+          onCerrar={() => setModalCita(null)}
         />
-
-        <input
-          type="time"
-          name="hora"
-          value={formCita.hora}
-          onChange={manejarCambioCita}
-          required
-        />
-
-        <input
-          type="text"
-          name="motivo"
-          placeholder="Motivo"
-          value={formCita.motivo}
-          onChange={manejarCambioCita}
-        />
-
-        <button type="submit">Guardar cita</button>
-      </form>
-
-      <h2>Lista de citas</h2>
-      {cargando ? (
-        <p>Cargando...</p>
-      ) : error ? (
-        <p>{error}</p>
-      ) : citas.length === 0 ? (
-        <p>No hay citas</p>
-      ) : (
-        <ul>
-          {citas.map((c) => (
-            <li key={c.id}>
-              <strong>{c.fecha}</strong> {c.hora} - {c.paciente?.nombre} - {c.motivo} - {c.zonaHoraria}
-            </li>
-          ))}
-        </ul>
       )}
+
+      {/* Popup for day summary */}
+      {popupDia && (
+        <PopupDiaCitas
+          fecha={popupDia.fecha}
+          citas={citas}
+          posicion={popupDia.posicion}
+          onAgregarCita={abrirModalDesdePopup}
+          onVerCita={abrirDetalle}
+          onCerrar={() => setPopupDia(null)}
+        />
+      )}
+
+      {/* Modal for cita detail / actions */}
+      {modalDetalle && (
+        <ModalDetalleCita
+          cita={modalDetalle}
+          onCerrar={() => setModalDetalle(null)}
+          onActualizar={handleActualizarCita}
+        />
+      )}
+
+      {/* Notification toasts — positioned fixed top-right */}
+      <NotificacionesToast toasts={toasts} onCerrar={cerrarToast} />
+
+      <footer className="footer">
+        <p>Zona horaria fija: America/Matamoros</p>
+      </footer>
     </div>
   );
 }
 
 export default App;
+

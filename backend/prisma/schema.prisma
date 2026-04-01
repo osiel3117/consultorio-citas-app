@@ -13,20 +13,24 @@ datasource db {
 }
 
 model Paciente {
-  id        Int      @id @default(autoincrement())
-  nombre    String
-  telefono  String?
-  email     String?
-  notas     String?
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
+  id              Int      @id @default(autoincrement())
+  nombre          String
+  telefono        String?
+  email           String?
+  notas           String?
+  numeroSesiones  Int      @default(0)
+  estadoPaciente  String   @default("activo")
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
 
-  citas     Cita[]
+  citas           Cita[]
 }
 
 model Cita {
   id          Int      @id @default(autoincrement())
-  pacienteId  Int
+  pacienteId  Int?
+  tipoCita    String   @default("individual")
+  tituloCita  String?
   fecha       String
   hora        String
   zonaHoraria String   @default("America/Matamoros")
@@ -35,5 +39,5 @@ model Cita {
   createdAt   DateTime @default(now())
   updatedAt   DateTime @updatedAt
 
-  paciente    Paciente @relation(fields: [pacienteId], references: [id], onDelete: Cascade)
+  paciente    Paciente? @relation(fields: [pacienteId], references: [id], onDelete: SetNull)
 }
