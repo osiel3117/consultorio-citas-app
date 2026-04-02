@@ -1,5 +1,37 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 
+function tieneWindow() {
+  return typeof window !== "undefined";
+}
+
+function tieneNavigator() {
+  return typeof navigator !== "undefined";
+}
+
+function obtenerNotificationSeguro() {
+  if (!tieneWindow()) return null;
+  if (!("Notification" in window)) return null;
+  return window.Notification;
+}
+
+export function leerPermisoNotificacionesSeguro() {
+  try {
+    const NotificationApi = obtenerNotificationSeguro();
+    if (!NotificationApi) return "unsupported";
+
+    const permiso = NotificationApi.permission;
+    if (["default", "granted", "denied"].includes(permiso)) {
+      return permiso;
+    }
+
+    console.error("[notificaciones] permiso de Notification inesperado", permiso);
+    return "unsupported";
+  } catch (error) {
+    console.error("[notificaciones] fallo al consultar Notification.permission", error);
+    return "unsupported";
+  }
+}
+
 // ---------------------------------------------------------------------------
 // Timezone helper — mirrors cita.controller.js exactly (en-CA, h23)
 // ---------------------------------------------------------------------------
@@ -65,42 +97,59 @@ export function useNotificacionesCitas(citas) {
   const disparadas = useRef(new Set());
 
   const revisar = useCallback(() => {
-    const ahora = nowEnMatamoros();
-    const nuevos = [];
+    try {
+      const ahora = nowEnMatamoros();
+      const nuevos = [];
 
-    citas.forEach((cita) => {
-      // Only alert for upcoming pending citas
-      if (cita.estado !== "pendiente") return;
+      citas.forEach((cita) => {
+        try {
+          if (cita.estado !== "pendiente") return;
 
-      const minutos = minutosHasta(cita.fecha, cita.hora, ahora);
+          const minutos = minutosHasta(cita.fecha, cita.hora, ahora);
 
-      ALERTAS.forEach(({ umbral, etiqueta }) => {
-        const key = `${cita.id}-${umbral}`;
+          ALERTAS.forEach(({ umbral, etiqueta }) => {
+            const key = `${cita.id}-${umbral}`;
 
-        // Skip if already fired, or too far in the future, or already past
-        if (disparadas.current.has(key)) return;
-        if (minutos > umbral) return;
-        if (minutos < -2) return; // cita ended > 2 min ago — ignore
+            if (disparadas.current.has(key)) return;
+            if (minutos > umbral) return;
+            if (minutos < -2) return;
 
-        disparadas.current.add(key);
+            disparadas.current.add(key);
 
-        nuevos.push({
-          id: `${key}-${Date.now()}`,
-          citaId: cita.id,
-          nombre: getNombreVisible(cita),
-          hora: cita.hora,
-          etiqueta,
-          minutos: Math.max(0, minutos),
-        });
+            nuevos.push({
+              id: `${key}-${Date.now()}`,
+              citaId: cita.id,
+              nombre: getNombreVisible(cita),
+              hora: cita.hora,
+              etiqueta,
+              minutos: Math.max(0, minutos),
+            });
+          });
+        } catch (error) {
+          console.error("[notificaciones] fallo al evaluar una cita proxima", {
+            error,
+            cita,
+          });
+        }
       });
-    });
 
-    if (nuevos.length === 0) return;
+      if (nuevos.length === 0) return;
 
-    setToasts((prev) => [...prev, ...nuevos]);
+      setToasts((prev) => [...prev, ...nuevos]);
 
-    // Browser notifications (no-op if permission not granted — see below)
-    nuevos.forEach(enviarNotificacionNavegador);
+      nuevos.forEach((toast) => {
+        try {
+          enviarNotificacionNavegador(toast);
+        } catch (error) {
+          console.error("[notificaciones] fallo al sincronizar notificacion del navegador", {
+            error,
+            toast,
+          });
+        }
+      });
+    } catch (error) {
+      console.error("[notificaciones] fallo general al revisar citas proximas", error);
+    }
   }, [citas]);
 
   useEffect(() => {
@@ -121,11 +170,21 @@ export function useNotificacionesCitas(citas) {
 // Call pedirPermisoNotificaciones() from a user gesture to enable.
 // ---------------------------------------------------------------------------
 export async function pedirPermisoNotificaciones() {
-  if (!("Notification" in window)) return false;
-  if (Notification.permission === "granted") return true;
-  if (Notification.permission === "denied") return false;
-  const result = await Notification.requestPermission();
-  return result === "granted";
+  try {
+    const NotificationApi = obtenerNotificationSeguro();
+    if (!NotificationApi) return false;
+    if (typeof NotificationApi.requestPermission !== "function") return false;
+
+    const permisoActual = leerPermisoNotificacionesSeguro();
+    if (permisoActual === "granted") return true;
+    if (permisoActual === "denied") return false;
+
+    const result = await NotificationApi.requestPermission();
+    return result === "granted";
+  } catch (error) {
+    console.error("[notificaciones] fallo al pedir permiso", error);
+    return false;
+  }
 }
 
 function formatHora12(hora) {
@@ -137,13 +196,23 @@ function formatHora12(hora) {
 }
 
 function enviarNotificacionNavegador({ nombre, etiqueta, hora }) {
-  if (!("Notification" in window)) return;
-  if (Notification.permission !== "granted") return;
+  try {
+    const NotificationApi = obtenerNotificationSeguro();
+    if (!NotificationApi) return;
+    if (leerPermisoNotificacionesSeguro() !== "granted") return;
 
-  new Notification("Cita próxima", {
-    body: `${nombre} — inicia en ${etiqueta} (${formatHora12(hora)})`,
-    icon: "/favicon.ico",
-    tag: `cita-${nombre}-${etiqueta}`, // browser deduplicates by tag
-    silent: false,
-  });
+    new NotificationApi("Cita próxima", {
+      body: `${nombre} — inicia en ${etiqueta} (${formatHora12(hora)})`,
+      icon: "/favicon.ico",
+      tag: `cita-${nombre}-${etiqueta}`,
+      silent: false,
+    });
+  } catch (error) {
+    console.error("[notificaciones] fallo al crear notificacion del navegador", {
+      error,
+      nombre,
+      etiqueta,
+      hora,
+    });
+  }
 }

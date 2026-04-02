@@ -9,6 +9,7 @@ import ModalDetalleCita from "./components/ModalDetalleCita";
 import PopupDiaCitas from "./components/PopupDiaCitas";
 import NotificacionesToast from "./components/NotificacionesToast";
 import BtnNotificaciones from "./components/BtnNotificaciones";
+import NotificationErrorBoundary from "./components/NotificationErrorBoundary";
 import { useNotificacionesCitas } from "./hooks/useNotificacionesCitas";
 import { API } from "./config/api";
 
@@ -197,7 +198,9 @@ function App() {
       <header className="header">
         <h1>CONSULTORIO DE ANGELA ADRIANA HERNÁNDEZ</h1>
         <p className="subtitulo">Agenda de citas — Reynosa, Tamps.</p>
-        <BtnNotificaciones />
+        <NotificationErrorBoundary>
+          <BtnNotificaciones />
+        </NotificationErrorBoundary>
       </header>
 
       {mensaje && (
@@ -298,7 +301,9 @@ function App() {
       )}
 
       {/* Notification toasts — positioned fixed top-right */}
-      <NotificacionesToast toasts={toasts} onCerrar={cerrarToast} />
+      <NotificationErrorBoundary>
+        <NotificacionesToast toasts={toasts} onCerrar={cerrarToast} />
+      </NotificationErrorBoundary>
 
       <footer className="footer">
         <p>Zona horaria fija: America/Matamoros</p>

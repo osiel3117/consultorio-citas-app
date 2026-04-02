@@ -1,11 +1,11 @@
 import { useEffect, useRef, useState } from "react";
-import { pedirPermisoNotificaciones } from "../hooks/useNotificacionesCitas";
+import {
+  leerPermisoNotificacionesSeguro,
+  pedirPermisoNotificaciones,
+} from "../hooks/useNotificacionesCitas";
 
-// Reads the live Notification.permission value.
-// Returns "unsupported" when the API isn't available (older browser, HTTP, etc.).
 function leerPermiso() {
-  if (!("Notification" in window)) return "unsupported";
-  return Notification.permission; // "default" | "granted" | "denied"
+  return leerPermisoNotificacionesSeguro();
 }
 
 function BtnNotificaciones() {
@@ -18,16 +18,23 @@ function BtnNotificaciones() {
   // Close panel when clicking outside
   useEffect(() => {
     if (!abierto) return;
+    if (typeof document === "undefined") return;
+
     const handler = (e) => {
-      if (
-        panelRef.current &&
-        !panelRef.current.contains(e.target) &&
-        btnRef.current &&
-        !btnRef.current.contains(e.target)
-      ) {
-        setAbierto(false);
+      try {
+        if (
+          panelRef.current &&
+          !panelRef.current.contains(e.target) &&
+          btnRef.current &&
+          !btnRef.current.contains(e.target)
+        ) {
+          setAbierto(false);
+        }
+      } catch (error) {
+        console.error("[notificaciones] fallo en listener de cierre del panel", error);
       }
     };
+
     document.addEventListener("mousedown", handler);
     return () => document.removeEventListener("mousedown", handler);
   }, [abierto]);
@@ -35,26 +42,55 @@ function BtnNotificaciones() {
   // Also listen for permission changes via the Permissions API (supported in
   // modern browsers) so the UI updates if the user changes settings externally.
   useEffect(() => {
-    if (!("permissions" in navigator)) return;
+    if (typeof navigator === "undefined") return;
+    if (!navigator?.permissions?.query) return;
+
     let descriptor;
+
     navigator.permissions
       .query({ name: "notifications" })
       .then((status) => {
-        descriptor = status;
-        status.onchange = () => setPermiso(leerPermiso());
+        try {
+          descriptor = status;
+          status.onchange = () => {
+            try {
+              setPermiso(leerPermiso());
+            } catch (error) {
+              console.error("[notificaciones] fallo al sincronizar permiso desde listener", error);
+            }
+          };
+        } catch (error) {
+          console.error("[notificaciones] fallo al registrar listener de permissions", error);
+        }
       })
-      .catch(() => {}); // silently ignore if unsupported
+      .catch((error) => {
+        console.error("[notificaciones] fallo al consultar navigator.permissions.query", error);
+      });
+
     return () => {
-      if (descriptor) descriptor.onchange = null;
+      try {
+        if (descriptor) descriptor.onchange = null;
+      } catch (error) {
+        console.error("[notificaciones] fallo al limpiar listener de permissions", error);
+      }
     };
   }, []);
 
   const handleSolicitar = async () => {
-    setSolicitando(true);
-    await pedirPermisoNotificaciones();
-    setPermiso(leerPermiso());
-    setSolicitando(false);
-    // Keep panel open so user can see the result
+    try {
+      setSolicitando(true);
+      await pedirPermisoNotificaciones();
+    } catch (error) {
+      console.error("[notificaciones] fallo al pedir permiso desde el boton", error);
+    } finally {
+      try {
+        setPermiso(leerPermiso());
+      } catch (error) {
+        console.error("[notificaciones] fallo al actualizar el estado del permiso despues de granted", error);
+        setPermiso("unsupported");
+      }
+      setSolicitando(false);
+    }
   };
 
   // Don't render the button at all if the browser doesn't support the API
