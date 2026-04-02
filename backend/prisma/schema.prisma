@@ -20,6 +20,7 @@ model Paciente {
   notas           String?
   numeroSesiones  Int      @default(0)
   estadoPaciente  String   @default("activo")
+  eliminado       Boolean  @default(false)
   createdAt       DateTime @default(now())
   updatedAt       DateTime @updatedAt
 

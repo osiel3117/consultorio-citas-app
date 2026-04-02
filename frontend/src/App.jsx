@@ -100,7 +100,11 @@ function App() {
         mostrarMensaje("error", data.error || "No se pudo eliminar el paciente");
         return;
       }
-      mostrarMensaje("exito", "Paciente eliminado");
+      const data = await res.json().catch(() => ({}));
+      if (pacienteEditando?.id === id) {
+        setPacienteEditando(null);
+      }
+      mostrarMensaje("exito", data.message || "Paciente eliminado");
       cargarPacientes();
     } catch {
       mostrarMensaje("error", "No se pudo eliminar el paciente");

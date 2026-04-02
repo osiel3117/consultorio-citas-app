@@ -57,7 +57,7 @@ const crearCita = async (req, res) => {
       where: { id: Number(pacienteId) }
     });
 
-    if (!pacienteExiste) {
+    if (!pacienteExiste || pacienteExiste.eliminado) {
       return res.status(404).json({
         error: 'El paciente no existe'
       });
@@ -133,12 +133,17 @@ const crearCitaRapida = async (req, res) => {
 
     // Buscar paciente existente (coincidencia exacta insensible a mayusculas)
     let paciente = await prisma.paciente.findFirst({
-      where: { nombre: { equals: nombre, mode: 'insensitive' } }
+      where: {
+        eliminado: false,
+        nombre: { equals: nombre, mode: 'insensitive' },
+      }
     });
 
     // Si no existe, crear uno nuevo
     if (!paciente) {
-      paciente = await prisma.paciente.create({ data: { nombre } });
+      paciente = await prisma.paciente.create({
+        data: { nombre, eliminado: false },
+      });
     }
 
     const cita = await prisma.cita.create({
@@ -170,6 +175,7 @@ const crearCitaRapida = async (req, res) => {
 const obtenerCitas = async (req, res) => {
   try {
     const citas = await prisma.cita.findMany({
+      where: { estado: { not: 'cancelada' } },
       include: { paciente: true },
       orderBy: [{ fecha: 'asc' }, { hora: 'asc' }],
     });

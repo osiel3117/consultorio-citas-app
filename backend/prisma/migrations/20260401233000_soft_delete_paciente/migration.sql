@@ -1,0 +1,2 @@
+ALTER TABLE "Paciente"
+ADD COLUMN "eliminado" BOOLEAN NOT NULL DEFAULT false;

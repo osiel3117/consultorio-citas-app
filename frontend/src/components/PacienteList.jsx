@@ -17,6 +17,7 @@ function PacienteList({ pacientes, onEditar, onEliminar, onCambiarEstado }) {
       ) : (
         <ul className="lista">
           {pacientes.map((p) => (
+            
             <li
               key={p.id}
               className={`item-lista${p.estadoPaciente === "alta" ? " item-alta" : ""}`}
@@ -37,10 +38,18 @@ function PacienteList({ pacientes, onEditar, onEliminar, onCambiarEstado }) {
                 <div className="item-secundario">{p.telefono}</div>
               )}
 
+              {(p._count?.citas > 0 || (p.numeroSesiones || 0) > 0) && (
+                <div className="item-secundario">
+                  Historial: {p._count?.citas || 0} cita{(p._count?.citas || 0) !== 1 ? "s" : ""} registradas
+                </div>
+              )}
+
               {confirmandoEliminar === p.id ? (
                 <div className="confirmar-eliminar">
                   <span className="confirmar-texto">
-                    ¿Eliminar permanentemente?
+                    {p._count?.citas > 0 || (p.numeroSesiones || 0) > 0
+                      ? "Este paciente tiene sesiones o historial registrado. Si continúas, dejará de aparecer en la app activa pero su historial se conservará."
+                      : "¿Eliminar este paciente del flujo activo?"}
                   </span>
                   <button
                     className="btn-mini btn-mini-peligro"
