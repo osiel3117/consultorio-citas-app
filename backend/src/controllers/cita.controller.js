@@ -31,8 +31,6 @@ function nowEnMatamoros() {
 /**
  * Returns true when the appointment's fecha+hora has already passed
  * compared to the current moment in America/Matamoros.
- * Both fecha and hora are stored as plain strings (YYYY-MM-DD / HH:MM)
- * so lexicographic comparison is valid and avoids any UTC conversion.
  */
 function citaYaPaso(fechaCita, horaCita) {
   const { fecha: hoy, hora: ahora } = nowEnMatamoros();
@@ -57,7 +55,7 @@ const crearCita = async (req, res) => {
       where: { id: Number(pacienteId) }
     });
 
-    if (!pacienteExiste || pacienteExiste.eliminado) {
+    if (!pacienteExiste) {
       return res.status(404).json({
         error: 'El paciente no existe'
       });
@@ -75,11 +73,7 @@ const crearCita = async (req, res) => {
       include: { paciente: true }
     });
 
-    // Incrementar numero de sesiones del paciente
-    await prisma.paciente.update({
-      where: { id: Number(pacienteId) },
-      data: { numeroSesiones: { increment: 1 } }
-    });
+    // numeroSesiones is NOT incremented here — only when marked as tomada.
 
     res.json(cita);
   } catch (error) {
@@ -134,7 +128,6 @@ const crearCitaRapida = async (req, res) => {
     // Buscar paciente existente (coincidencia exacta insensible a mayusculas)
     let paciente = await prisma.paciente.findFirst({
       where: {
-        eliminado: false,
         nombre: { equals: nombre, mode: 'insensitive' },
       }
     });
@@ -142,7 +135,7 @@ const crearCitaRapida = async (req, res) => {
     // Si no existe, crear uno nuevo
     if (!paciente) {
       paciente = await prisma.paciente.create({
-        data: { nombre, eliminado: false },
+        data: { nombre },
       });
     }
 
@@ -159,11 +152,7 @@ const crearCitaRapida = async (req, res) => {
       include: { paciente: true },
     });
 
-    // Incrementar sesiones
-    await prisma.paciente.update({
-      where: { id: paciente.id },
-      data: { numeroSesiones: { increment: 1 } },
-    });
+    // numeroSesiones is NOT incremented here — only when marked as tomada.
 
     res.json(cita);
   } catch (error) {
@@ -175,14 +164,12 @@ const crearCitaRapida = async (req, res) => {
 const obtenerCitas = async (req, res) => {
   try {
     const citas = await prisma.cita.findMany({
-      where: { estado: { not: 'cancelada' } },
       include: { paciente: true },
       orderBy: [{ fecha: 'asc' }, { hora: 'asc' }],
     });
 
     // Auto-transition: pendiente or reagendada citas whose fecha+hora has
-    // already passed in America/Matamoros → mark as tomada.
-    // cancelada is never touched. reagendada that hasn't passed yet is kept.
+    // already passed in America/Matamoros → mark as tomada and increment sesiones.
     const vencidas = citas.filter(
       (c) =>
         (c.estado === 'pendiente' || c.estado === 'reagendada') &&
@@ -194,6 +181,15 @@ const obtenerCitas = async (req, res) => {
         where: { id: { in: vencidas.map((c) => c.id) } },
         data: { estado: 'tomada' },
       });
+
+      // Increment sesiones for each vencida cita that has a patient
+      for (const c of vencidas.filter((c) => c.pacienteId)) {
+        await prisma.paciente.update({
+          where: { id: c.pacienteId },
+          data: { numeroSesiones: { increment: 1 } },
+        });
+      }
+
       // Patch in memory so this response is already correct
       vencidas.forEach((c) => {
         c.estado = 'tomada';
@@ -212,14 +208,25 @@ const actualizarCita = async (req, res) => {
     const { id } = req.params;
     const { estado, fecha, hora, motivo, tipoCita, tituloCita } = req.body;
 
-    const estadosValidos = ['pendiente', 'tomada', 'cancelada', 'reagendada'];
+    // 'cancelada' is no longer a valid state — use DELETE /citas/:id instead.
+    const estadosValidos = ['pendiente', 'tomada', 'reagendada'];
     if (estado && !estadosValidos.includes(estado)) {
-      return res.status(400).json({ error: 'Estado no valido' });
+      return res.status(400).json({ error: 'Estado no valido. Para cancelar, usa DELETE /citas/:id' });
     }
 
     const tiposValidos = ['individual', 'pareja', 'familiar'];
     if (tipoCita && !tiposValidos.includes(tipoCita)) {
       return res.status(400).json({ error: 'tipoCita no valido' });
+    }
+
+    // Read current estado before update (needed for sesiones logic)
+    const citaAntes = await prisma.cita.findUnique({
+      where: { id: Number(id) },
+      select: { estado: true, pacienteId: true },
+    });
+
+    if (!citaAntes) {
+      return res.status(404).json({ error: 'Cita no encontrada' });
     }
 
     const data = {};
@@ -236,6 +243,26 @@ const actualizarCita = async (req, res) => {
       include: { paciente: true }
     });
 
+    // Adjust numeroSesiones based on tomada ↔ non-tomada transitions
+    if (estado !== undefined && cita.pacienteId) {
+      const fueTomates = citaAntes.estado === 'tomada';
+      const esAhoraTomada = estado === 'tomada';
+
+      if (!fueTomates && esAhoraTomada) {
+        // pendiente/reagendada → tomada: count the session
+        await prisma.paciente.update({
+          where: { id: cita.pacienteId },
+          data: { numeroSesiones: { increment: 1 } },
+        });
+      } else if (fueTomates && !esAhoraTomada) {
+        // tomada → pendiente/reagendada: uncounting the session
+        await prisma.paciente.update({
+          where: { id: cita.pacienteId },
+          data: { numeroSesiones: { decrement: 1 } },
+        });
+      }
+    }
+
     res.json(cita);
   } catch (error) {
     console.error(error);
@@ -243,9 +270,42 @@ const actualizarCita = async (req, res) => {
   }
 };
 
+// Hard-delete a cita. If the cita was tomada, decrements the patient's sesion count.
+const eliminarCita = async (req, res) => {
+  try {
+    const { id } = req.params;
+    const numId = Number(id);
+
+    const cita = await prisma.cita.findUnique({
+      where: { id: numId },
+      select: { estado: true, pacienteId: true },
+    });
+
+    if (!cita) {
+      return res.status(404).json({ error: 'Cita no encontrada' });
+    }
+
+    // If the cita was already counted as tomada, subtract that session.
+    if (cita.estado === 'tomada' && cita.pacienteId) {
+      await prisma.paciente.update({
+        where: { id: cita.pacienteId },
+        data: { numeroSesiones: { decrement: 1 } },
+      });
+    }
+
+    await prisma.cita.delete({ where: { id: numId } });
+
+    res.json({ ok: true });
+  } catch (error) {
+    console.error(error);
+    res.status(500).json({ error: 'Error al eliminar cita' });
+  }
+};
+
 module.exports = {
   crearCita,
   crearCitaRapida,
   obtenerCitas,
-  actualizarCita
+  actualizarCita,
+  eliminarCita,
 };

@@ -183,6 +183,14 @@ function App() {
     cargarPacientes();
   };
 
+  // Called when DELETE /citas/:id resolves (from modal or list)
+  const handleEliminarCita = () => {
+    setModalDetalle(null);
+    mostrarMensaje("exito", "Cita cancelada y eliminada");
+    cargarCitas();
+    cargarPacientes();
+  };
+
   // Called from day popup to open create modal — always pre-fill current time
   const abrirModalDesdePopup = (fecha) => {
     setPopupDia(null);
@@ -252,6 +260,7 @@ function App() {
               cargando={cargando}
               onVerCita={abrirDetalle}
               onActualizar={handleActualizarCita}
+              onEliminar={handleEliminarCita}
             />
           </div>
         )}
@@ -301,6 +310,7 @@ function App() {
           cita={modalDetalle}
           onCerrar={() => setModalDetalle(null)}
           onActualizar={handleActualizarCita}
+          onEliminar={handleEliminarCita}
         />
       )}
 

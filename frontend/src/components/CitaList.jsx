@@ -19,7 +19,6 @@ function formatearHora(hora) {
 const BADGE_ESTADO = {
   pendiente: "badge-pendiente",
   tomada: "badge-tomada",
-  cancelada: "badge-cancelada",
   reagendada: "badge-reagendada",
 };
 
@@ -31,8 +30,9 @@ function getNombreVisible(cita) {
   return "Cita";
 }
 
-function CitaList({ citas, cargando, onVerCita, onActualizar }) {
-  const [actualizando, setActualizando] = useState(null); // id of cita being updated
+function CitaList({ citas, cargando, onVerCita, onActualizar, onEliminar }) {
+  const [actualizando, setActualizando] = useState(null);
+  const [confirmandoCancelar, setConfirmandoCancelar] = useState(null); // citaId
 
   const cambiarEstado = async (e, cita, estado) => {
     e.stopPropagation();
@@ -47,7 +47,22 @@ function CitaList({ citas, cargando, onVerCita, onActualizar }) {
       const updated = await res.json();
       onActualizar && onActualizar(updated);
     } catch {
-      // Error is surfaced by App.jsx after cargarCitas fails
+      // Error surfaced after cargarCitas reload
+    } finally {
+      setActualizando(null);
+    }
+  };
+
+  const confirmarCancelar = async (e, citaId) => {
+    e.stopPropagation();
+    setActualizando(citaId);
+    setConfirmandoCancelar(null);
+    try {
+      const res = await fetch(`${API}/citas/${citaId}`, { method: "DELETE" });
+      if (!res.ok) throw new Error();
+      onEliminar && onEliminar();
+    } catch {
+      // Error surfaced after cargarCitas reload
     } finally {
       setActualizando(null);
     }
@@ -72,11 +87,12 @@ function CitaList({ citas, cargando, onVerCita, onActualizar }) {
           {citas.map((c) => {
             const editable = c.estado === "pendiente" || c.estado === "reagendada";
             const ocupado = actualizando === c.id;
+            const confirmando = confirmandoCancelar === c.id;
             return (
               <li
                 key={c.id}
                 className={`item-lista${onVerCita ? " item-lista-clickable" : ""}`}
-                onClick={() => onVerCita && onVerCita(c)}
+                onClick={() => !confirmando && onVerCita && onVerCita(c)}
               >
                 <div className="item-lista-row">
                   <div className="item-principal">
@@ -99,8 +115,30 @@ function CitaList({ citas, cargando, onVerCita, onActualizar }) {
                   <div className="item-secundario">📝 {c.motivo}</div>
                 )}
 
+                {/* Inline confirmation for cancel */}
+                {confirmando && (
+                  <div className="confirmar-eliminar" onClick={(e) => e.stopPropagation()}>
+                    <span className="confirmar-texto">
+                      ¿Seguro que deseas cancelar esta cita? Se eliminará por completo.
+                    </span>
+                    <button
+                      className="btn-mini btn-mini-peligro"
+                      disabled={ocupado}
+                      onClick={(e) => confirmarCancelar(e, c.id)}
+                    >
+                      Sí, eliminar
+                    </button>
+                    <button
+                      className="btn-mini btn-mini-secundario"
+                      onClick={(e) => { e.stopPropagation(); setConfirmandoCancelar(null); }}
+                    >
+                      No
+                    </button>
+                  </div>
+                )}
+
                 {/* Inline quick actions for actionable states */}
-                {editable && (
+                {editable && !confirmando && (
                   <div className="item-acciones" onClick={(e) => e.stopPropagation()}>
                     <button
                       className="btn-mini btn-mini-tomada"
@@ -112,7 +150,7 @@ function CitaList({ citas, cargando, onVerCita, onActualizar }) {
                     <button
                       className="btn-mini btn-mini-cancelar"
                       disabled={ocupado}
-                      onClick={(e) => cambiarEstado(e, c, "cancelada")}
+                      onClick={(e) => { e.stopPropagation(); setConfirmandoCancelar(c.id); }}
                     >
                       Cancelar
                     </button>

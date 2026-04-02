@@ -1,7 +1,5 @@
 ﻿const prisma = require('../config/prisma');
 
-const PACIENTE_VISIBLE = { eliminado: false };
-
 const crearPaciente = async (req, res) => {
   try {
     const { nombre, telefono, email, notas, numeroSesiones } = req.body;
@@ -18,7 +16,6 @@ const crearPaciente = async (req, res) => {
         notas: notas?.trim() || null,
         numeroSesiones: Number(numeroSesiones) || 0,
         estadoPaciente: 'activo',
-        eliminado: false,
       },
     });
 
@@ -32,7 +29,6 @@ const crearPaciente = async (req, res) => {
 const obtenerPacientes = async (req, res) => {
   try {
     const pacientes = await prisma.paciente.findMany({
-      where: PACIENTE_VISIBLE,
       include: { _count: { select: { citas: true } } },
       orderBy: { nombre: 'asc' },
     });
@@ -53,7 +49,6 @@ const buscarPacientes = async (req, res) => {
 
     const pacientes = await prisma.paciente.findMany({
       where: {
-        ...PACIENTE_VISIBLE,
         nombre: { contains: q.trim(), mode: 'insensitive' },
       },
       orderBy: { nombre: 'asc' },
@@ -74,10 +69,10 @@ const actualizarPaciente = async (req, res) => {
 
     const pacienteExistente = await prisma.paciente.findUnique({
       where: { id: Number(id) },
-      select: { id: true, eliminado: true },
+      select: { id: true },
     });
 
-    if (!pacienteExistente || pacienteExistente.eliminado) {
+    if (!pacienteExistente) {
       return res.status(404).json({ error: 'Paciente no encontrado' });
     }
 
@@ -111,10 +106,10 @@ const cambiarEstadoPaciente = async (req, res) => {
 
     const pacienteExistente = await prisma.paciente.findUnique({
       where: { id: Number(id) },
-      select: { id: true, eliminado: true },
+      select: { id: true },
     });
 
-    if (!pacienteExistente || pacienteExistente.eliminado) {
+    if (!pacienteExistente) {
       return res.status(404).json({ error: 'Paciente no encontrado' });
     }
 
@@ -140,23 +135,20 @@ const eliminarPaciente = async (req, res) => {
       include: { _count: { select: { citas: true } } },
     });
 
-    if (!paciente || paciente.eliminado) {
+    if (!paciente) {
       return res.status(404).json({ error: 'Paciente no encontrado' });
     }
 
-    const tieneHistorial = paciente.numeroSesiones > 0 || paciente._count.citas > 0;
+    const teniaCitas = paciente._count.citas > 0;
 
-    await prisma.paciente.update({
-      where: { id: numId },
-      data: { eliminado: true },
-    });
+    // onDelete: Cascade in schema removes all their citas automatically.
+    await prisma.paciente.delete({ where: { id: numId } });
 
     res.json({
       ok: true,
-      tieneHistorial,
-      message: tieneHistorial
-        ? 'Paciente ocultado del flujo activo. Su historial se conserva.'
-        : 'Paciente eliminado del flujo activo.',
+      message: teniaCitas
+        ? 'Paciente y sus citas relacionadas eliminados permanentemente.'
+        : 'Paciente eliminado.',
     });
   } catch (error) {
     console.error(error);

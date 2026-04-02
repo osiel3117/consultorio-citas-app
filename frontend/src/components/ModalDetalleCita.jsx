@@ -23,7 +23,6 @@ function formatearHora(hora) {
 const ETIQUETA_ESTADO = {
   pendiente: "Pendiente",
   tomada: "Tomada",
-  cancelada: "Cancelada",
   reagendada: "Reagendada",
 };
 
@@ -35,8 +34,9 @@ function getNombreVisible(cita) {
   return "Cita";
 }
 
-function ModalDetalleCita({ cita, onCerrar, onActualizar }) {
+function ModalDetalleCita({ cita, onCerrar, onActualizar, onEliminar }) {
   const [reagendando, setReagendando] = useState(false);
+  const [confirmandoCancelar, setConfirmandoCancelar] = useState(false);
   const [nuevaFecha, setNuevaFecha] = useState(cita.fecha);
   const [nuevaHora, setNuevaHora] = useState(cita.hora);
   const [nuevoMotivo, setNuevoMotivo] = useState(cita.motivo || "");
@@ -63,6 +63,23 @@ function ModalDetalleCita({ cita, onCerrar, onActualizar }) {
     } catch (err) {
       setError(err.message || "No se pudo actualizar la cita");
       setGuardando(false);
+    }
+  };
+
+  const handleConfirmarCancelar = async () => {
+    setError("");
+    setGuardando(true);
+    try {
+      const res = await fetch(`${API}/citas/${cita.id}`, { method: "DELETE" });
+      if (!res.ok) {
+        const data = await res.json().catch(() => ({}));
+        throw new Error(data.error || "Error al eliminar");
+      }
+      onEliminar();
+    } catch (err) {
+      setError(err.message || "No se pudo eliminar la cita");
+      setGuardando(false);
+      setConfirmandoCancelar(false);
     }
   };
 
@@ -137,16 +154,40 @@ function ModalDetalleCita({ cita, onCerrar, onActualizar }) {
 
           {error && <p className="modal-error">{error}</p>}
 
-          {/* Note for closed citas */}
-          {(cita.estado === "tomada" || cita.estado === "cancelada") && !reagendando && (
+          {/* Note for tomada citas */}
+          {cita.estado === "tomada" && !reagendando && !confirmandoCancelar && (
             <p className="detalle-cerrado">
-              {cita.estado === "tomada" ? "Esta cita ya fue tomada." : "Esta cita fue cancelada."}
-              {" "}Puedes corregirla aquí si fue un error.
+              Esta cita ya fue tomada. Puedes corregirla aquí si fue un error.
             </p>
           )}
 
+          {/* Inline cancel confirmation */}
+          {confirmandoCancelar && (
+            <div className="confirmar-cancelar-cita">
+              <p className="confirmar-cancelar-texto">
+                ¿Seguro que deseas cancelar esta cita? Esta acción la eliminará por completo y no se puede deshacer.
+              </p>
+              <div className="confirmar-cancelar-botones">
+                <button
+                  className="btn-accion btn-cancelar"
+                  disabled={guardando}
+                  onClick={handleConfirmarCancelar}
+                >
+                  Sí, eliminar
+                </button>
+                <button
+                  className="btn-accion btn-secundario"
+                  disabled={guardando}
+                  onClick={() => setConfirmandoCancelar(false)}
+                >
+                  Volver
+                </button>
+              </div>
+            </div>
+          )}
+
           {/* Action buttons — available for all states */}
-          {!reagendando && (
+          {!reagendando && !confirmandoCancelar && (
             <div className="detalle-acciones">
               {cita.estado !== "tomada" && (
                 <button
@@ -157,7 +198,7 @@ function ModalDetalleCita({ cita, onCerrar, onActualizar }) {
                   Marcar como tomada
                 </button>
               )}
-              {(cita.estado === "tomada" || cita.estado === "cancelada") && (
+              {cita.estado === "tomada" && (
                 <button
                   className="btn-accion btn-reagendar"
                   disabled={guardando}
@@ -173,15 +214,13 @@ function ModalDetalleCita({ cita, onCerrar, onActualizar }) {
               >
                 Reagendar
               </button>
-              {cita.estado !== "cancelada" && (
-                <button
-                  className="btn-accion btn-cancelar"
-                  disabled={guardando}
-                  onClick={() => accionarEstado("cancelada")}
-                >
-                  Cancelar cita
-                </button>
-              )}
+              <button
+                className="btn-accion btn-cancelar"
+                disabled={guardando}
+                onClick={() => setConfirmandoCancelar(true)}
+              >
+                Cancelar cita
+              </button>
             </div>
           )}
 

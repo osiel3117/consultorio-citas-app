@@ -48,8 +48,8 @@ function PacienteList({ pacientes, onEditar, onEliminar, onCambiarEstado }) {
                 <div className="confirmar-eliminar">
                   <span className="confirmar-texto">
                     {p._count?.citas > 0 || (p.numeroSesiones || 0) > 0
-                      ? "Este paciente tiene sesiones o historial registrado. Si continúas, dejará de aparecer en la app activa pero su historial se conservará."
-                      : "¿Eliminar este paciente del flujo activo?"}
+                      ? `Este paciente tiene ${p._count?.citas || 0} cita(s) registrada(s). Si continúas, el paciente y todas sus citas relacionadas se eliminarán permanentemente. Esta acción no se puede deshacer.`
+                      : "¿Eliminar este paciente? Esta acción no se puede deshacer."}
                   </span>
                   <button
                     className="btn-mini btn-mini-peligro"
