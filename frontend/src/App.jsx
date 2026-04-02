@@ -10,8 +10,7 @@ import PopupDiaCitas from "./components/PopupDiaCitas";
 import NotificacionesToast from "./components/NotificacionesToast";
 import BtnNotificaciones from "./components/BtnNotificaciones";
 import { useNotificacionesCitas } from "./hooks/useNotificacionesCitas";
-
-const API = "http://localhost:3000/api";
+import { API } from "./config/api";
 
 function App() {
   const [pacientes, setPacientes] = useState([]);

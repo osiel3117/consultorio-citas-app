@@ -1,6 +1,5 @@
 import { useState } from "react";
-
-const API = "http://localhost:3000/api";
+import { API } from "../config/api";
 
 function formatearFechaLarga(fecha) {
   if (!fecha) return "";

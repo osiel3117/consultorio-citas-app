@@ -1,6 +1,5 @@
 ﻿import { useState, useEffect, useRef } from "react";
-
-const API = "http://localhost:3000/api";
+import { API } from "../config/api";
 
 const TIPO_OPCIONES = [
   { valor: "individual", etiqueta: "Individual" },
