@@ -28,68 +28,52 @@ const ETIQUETA_ESTADO = {
 
 const ETIQUETA_TIPO = { individual: "Individual", pareja: "Pareja", familiar: "Familiar" };
 
-// WhatsApp sharing ----------------------------------------------------------
-
-const DIAS_ES = ["domingo", "lunes", "martes", "miércoles", "jueves", "viernes", "sábado"];
-const MESES_ES = [
-  "enero", "febrero", "marzo", "abril", "mayo", "junio",
-  "julio", "agosto", "septiembre", "octubre", "noviembre", "diciembre",
-];
-
-/**
- * Formats a "HH:MM" 24-h string to "H:MM a. m." / "H:MM p. m." Spanish style.
- */
-function formatearHoraES(hora) {
-  const [h, min] = hora.split(":");
-  const hr = parseInt(h, 10);
-  const sufijo = hr >= 12 ? "p. m." : "a. m.";
-  const hr12 = hr % 12 || 12;
-  return `${hr12}:${min} ${sufijo}`;
-}
-
-/**
- * Returns the "HH:MM" string for (hora + 1 hour), clamped to "23:MM".
- * Pure string arithmetic — no Date/UTC conversions.
- */
-function horaFinUnaHora(hora) {
-  const [h, min] = hora.split(":");
-  const finH = Math.min(parseInt(h, 10) + 1, 23);
-  return `${String(finH).padStart(2, "0")}:${min}`;
-}
-
-/**
- * Builds the WhatsApp share text for a cita.
- * Format:
- *   Datos de la cita
- *   11:00 a. m. - 12:00 p. m. sábado, 28 de junio: Nombre
- */
-function generarTextoWhatsApp(cita) {
-  const nombre = getNombreVisible(cita);
-  const horaInicio = formatearHoraES(cita.hora);
-  const horaFin = formatearHoraES(horaFinUnaHora(cita.hora));
-
-  // Build date label from stored "YYYY-MM-DD" string without timezone shifts.
-  const [y, m, d] = cita.fecha.split("-").map(Number);
-  // Use a noon UTC Date so no timezone can flip the day.
-  const fechaObj = new Date(Date.UTC(y, m - 1, d, 12, 0, 0));
-  const diaSemana = DIAS_ES[fechaObj.getUTCDay()];
-  const mesNombre = MESES_ES[m - 1];
-  const fechaLabel = `${diaSemana}, ${d} de ${mesNombre}`;
-
-  return `Datos de la cita\n${horaInicio} - ${horaFin} ${fechaLabel}: ${nombre}`;
-}
-
-function abrirWhatsApp(cita) {
-  const texto = generarTextoWhatsApp(cita);
-  window.open(`https://wa.me/?text=${encodeURIComponent(texto)}`, "_blank", "noopener,noreferrer");
-}
-
-// ---------------------------------------------------------------------------
-
 function getNombreVisible(cita) {
   if (cita.tituloCita) return cita.tituloCita;
   if (cita.paciente?.nombre) return cita.paciente.nombre;
   return "Cita";
+}
+
+// Returns "11:00 a. m." or "12:00 p. m." from a "HH:MM" string.
+// Uses literal a. m. / p. m. punctuation as per Spanish orthography.
+function formatearHoraWA(hora) {
+  if (!hora) return "";
+  const [h, min] = hora.split(":").map(Number);
+  const ampm = h >= 12 ? "p. m." : "a. m.";
+  const hr12 = h % 12 || 12;
+  return `${hr12}:${String(min).padStart(2, "0")} ${ampm}`;
+}
+
+// Adds 1 hour to a "HH:MM" string, clamping at 23:59.
+function horaFin(hora) {
+  if (!hora) return "";
+  const [h, min] = hora.split(":").map(Number);
+  const hFin = Math.min(h + 1, 23);
+  return `${String(hFin).padStart(2, "0")}:${String(min).padStart(2, "0")}`;
+}
+
+// Returns "sábado, 28 de junio" from a "YYYY-MM-DD" string.
+// Uses Intl with the stored date interpreted in America/Matamoros so the
+// displayed weekday/day/month always matches the scheduled date — not a UTC drift.
+function formatearFechaWA(fecha) {
+  if (!fecha) return "";
+  // Append T12:00:00 in Matamoros time so the date never shifts across midnight.
+  const dt = new Date(`${fecha}T12:00:00`);
+  return new Intl.DateTimeFormat("es-MX", {
+    timeZone: "America/Matamoros",
+    weekday: "long",
+    day: "numeric",
+    month: "long",
+  }).format(dt);
+}
+
+function compartirWhatsApp(cita) {
+  const nombre = getNombreVisible(cita);
+  const inicio = formatearHoraWA(cita.hora);
+  const fin = formatearHoraWA(horaFin(cita.hora));
+  const fecha = formatearFechaWA(cita.fecha);
+  const texto = `Datos de la cita\n${inicio} - ${fin} ${fecha}: ${nombre}`;
+  window.open(`https://wa.me/?text=${encodeURIComponent(texto)}`, "_blank", "noopener");
 }
 
 function ModalDetalleCita({ cita, onCerrar, onActualizar, onEliminar }) {
@@ -281,7 +265,7 @@ function ModalDetalleCita({ cita, onCerrar, onActualizar, onEliminar }) {
               </button>
               <button
                 className="btn-accion btn-whatsapp"
-                onClick={() => abrirWhatsApp(cita)}
+                onClick={() => compartirWhatsApp(cita)}
               >
                 Compartir por WhatsApp
               </button>
