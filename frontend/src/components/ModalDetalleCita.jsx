@@ -72,7 +72,7 @@ function compartirWhatsApp(cita) {
   const inicio = formatearHoraWA(cita.hora);
   const fin = formatearHoraWA(horaFin(cita.hora));
   const fecha = formatearFechaWA(cita.fecha);
-  const texto = `Datos de la cita\n${inicio} - ${fin} ${fecha}: ${nombre}`;
+  const texto = `*Datos de la cita*\n${inicio} - ${fin} ${fecha}: ${nombre}`;
   window.open(`https://wa.me/?text=${encodeURIComponent(texto)}`, "_blank", "noopener");
 }
 
