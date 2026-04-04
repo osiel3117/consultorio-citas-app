@@ -28,6 +28,64 @@ const ETIQUETA_ESTADO = {
 
 const ETIQUETA_TIPO = { individual: "Individual", pareja: "Pareja", familiar: "Familiar" };
 
+// WhatsApp sharing ----------------------------------------------------------
+
+const DIAS_ES = ["domingo", "lunes", "martes", "miércoles", "jueves", "viernes", "sábado"];
+const MESES_ES = [
+  "enero", "febrero", "marzo", "abril", "mayo", "junio",
+  "julio", "agosto", "septiembre", "octubre", "noviembre", "diciembre",
+];
+
+/**
+ * Formats a "HH:MM" 24-h string to "H:MM a. m." / "H:MM p. m." Spanish style.
+ */
+function formatearHoraES(hora) {
+  const [h, min] = hora.split(":");
+  const hr = parseInt(h, 10);
+  const sufijo = hr >= 12 ? "p. m." : "a. m.";
+  const hr12 = hr % 12 || 12;
+  return `${hr12}:${min} ${sufijo}`;
+}
+
+/**
+ * Returns the "HH:MM" string for (hora + 1 hour), clamped to "23:MM".
+ * Pure string arithmetic — no Date/UTC conversions.
+ */
+function horaFinUnaHora(hora) {
+  const [h, min] = hora.split(":");
+  const finH = Math.min(parseInt(h, 10) + 1, 23);
+  return `${String(finH).padStart(2, "0")}:${min}`;
+}
+
+/**
+ * Builds the WhatsApp share text for a cita.
+ * Format:
+ *   Datos de la cita
+ *   11:00 a. m. - 12:00 p. m. sábado, 28 de junio: Nombre
+ */
+function generarTextoWhatsApp(cita) {
+  const nombre = getNombreVisible(cita);
+  const horaInicio = formatearHoraES(cita.hora);
+  const horaFin = formatearHoraES(horaFinUnaHora(cita.hora));
+
+  // Build date label from stored "YYYY-MM-DD" string without timezone shifts.
+  const [y, m, d] = cita.fecha.split("-").map(Number);
+  // Use a noon UTC Date so no timezone can flip the day.
+  const fechaObj = new Date(Date.UTC(y, m - 1, d, 12, 0, 0));
+  const diaSemana = DIAS_ES[fechaObj.getUTCDay()];
+  const mesNombre = MESES_ES[m - 1];
+  const fechaLabel = `${diaSemana}, ${d} de ${mesNombre}`;
+
+  return `Datos de la cita\n${horaInicio} - ${horaFin} ${fechaLabel}: ${nombre}`;
+}
+
+function abrirWhatsApp(cita) {
+  const texto = generarTextoWhatsApp(cita);
+  window.open(`https://wa.me/?text=${encodeURIComponent(texto)}`, "_blank", "noopener,noreferrer");
+}
+
+// ---------------------------------------------------------------------------
+
 function getNombreVisible(cita) {
   if (cita.tituloCita) return cita.tituloCita;
   if (cita.paciente?.nombre) return cita.paciente.nombre;
@@ -220,6 +278,12 @@ function ModalDetalleCita({ cita, onCerrar, onActualizar, onEliminar }) {
                 onClick={() => setConfirmandoCancelar(true)}
               >
                 Cancelar cita
+              </button>
+              <button
+                className="btn-accion btn-whatsapp"
+                onClick={() => abrirWhatsApp(cita)}
+              >
+                Compartir por WhatsApp
               </button>
             </div>
           )}
